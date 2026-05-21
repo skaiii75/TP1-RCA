@@ -79,8 +79,36 @@ int main(int argc, char *argv[]) {
 
 	while(!quit) {
 		if(pid == 0) {
-			/* L'envoi des messages sera ajouté à l'étape 4. */
-			sleep(1);
+			/*
+			 * Étape 4 - Envoi de messages sur le chat général
+			 *
+			 * Le thread enfant lit le terminal. scanf() utilise IN_FILT pour
+			 * récupérer tout ce qui est saisi jusqu'au premier '\n', donc
+			 * jusqu'à l'appui sur Entrée. Le message lu est ensuite envoyé au
+			 * serveur avec send().
+			 */
+			int nb_scan = scanf(IN_FILT, buffer);
+
+			if(nb_scan == 1) {
+				if(strcmp(buffer, CMD_QUIT) == 0) {
+					/*
+					 * La fermeture réelle de la connexion sera finalisée à
+					 * l'étape 5. Ici, on arrête déjà la boucle de l'enfant.
+					 */
+					quit = 1;
+				} else {
+					int nb_send = send(sock, buffer, strlen(buffer), 0);
+					if(nb_send == -1) {
+						perror("Erreur envoi message");
+						quit = 1;
+					}
+				}
+			} else if(nb_scan == EOF) {
+				quit = 1;
+			} else {
+				/* Ligne vide : scanf() ne lit rien, on consomme le '\n'. */
+				getchar();
+			}
 		} else {
 			/*
 			 * Étape 3 - Réception du chat général
