@@ -92,19 +92,27 @@ int main(int argc, char *argv[]) {
 			if(nb_scan == 1) {
 				if(strcmp(buffer, CMD_QUIT) == 0) {
 					/*
-					 * La fermeture réelle de la connexion sera finalisée à
-					 * l'étape 5. Ici, on arrête déjà la boucle de l'enfant.
+					 * Étape 5 - Déconnexion du serveur
+					 *
+					 * Après fork(), le parent et l'enfant ont chacun leur
+					 * propre variable quit. Modifier quit dans l'enfant ne
+					 * suffit donc pas à arrêter le parent. shutdown() ferme la
+					 * connexion TCP côté noyau : le recv() bloquant du parent
+					 * se débloque alors et peut quitter sa boucle.
 					 */
 					quit = 1;
+					shutdown(sock, SHUT_RDWR);
 				} else {
 					int nb_send = send(sock, buffer, strlen(buffer), 0);
 					if(nb_send == -1) {
 						perror("Erreur envoi message");
 						quit = 1;
+						shutdown(sock, SHUT_RDWR);
 					}
 				}
 			} else if(nb_scan == EOF) {
 				quit = 1;
+				shutdown(sock, SHUT_RDWR);
 			} else {
 				/* Ligne vide : scanf() ne lit rien, on consomme le '\n'. */
 				getchar();
