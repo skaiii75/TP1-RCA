@@ -16,6 +16,7 @@
 #define CMD_QUIT "/q"
 #define SERVER_IP "169.254.61.46"
 #define SERVER_PORT 4242
+#define PRIVATE_PORT 5555
 
 int main(int argc, char *argv[]) {
 	(void)argc;
@@ -61,6 +62,34 @@ int main(int argc, char *argv[]) {
 
 	if(connect(sock, (struct sockaddr *)&server, sizeof(server)) == -1) {
 		perror("Erreur connexion serveur");
+		close(sock);
+		return EXIT_FAILURE;
+	}
+
+	/*
+	 * Étape 6 - Socket d'écoute UDP pour les messages privés
+	 *
+	 * Les messages privés ne passeront pas par le serveur. On prépare donc
+	 * une socket UDP locale, attachée à toutes les interfaces réseau avec
+	 * INADDR_ANY et au port PRIVATE_PORT. Cette socket sera lue plus tard
+	 * par un thread dédié.
+	 */
+	int private_sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if(private_sock == -1) {
+		perror("Erreur création socket UDP privée");
+		close(sock);
+		return EXIT_FAILURE;
+	}
+
+	struct sockaddr_in private_addr;
+	memset(&private_addr, 0, sizeof(private_addr));
+	private_addr.sin_family = AF_INET;
+	private_addr.sin_port = htons(PRIVATE_PORT);
+	private_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+	if(bind(private_sock, (struct sockaddr *)&private_addr, sizeof(private_addr)) == -1) {
+		perror("Erreur bind socket UDP privée");
+		close(private_sock);
 		close(sock);
 		return EXIT_FAILURE;
 	}
@@ -143,6 +172,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	close(sock);
+	close(private_sock);
 
 	return EXIT_SUCCESS;
 }
