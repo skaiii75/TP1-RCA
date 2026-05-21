@@ -19,10 +19,29 @@
 #define MSG_SCAN_LEN 99
 #define IN_FILT "%" STR(MSG_SCAN_LEN) "[^\n]%*c"
 #define CMD_QUIT "/q"
+#define CMD_HELP "/help"
 #define SERVER_IP "169.254.61.46"
 #define SERVER_PORT 4242
 #define PRIVATE_PORT 5555
 #define CONNECT_TIMEOUT_SEC 5
+
+static void print_prompt(void) {
+	printf("chat> ");
+	fflush(stdout);
+}
+
+static void print_help(void) {
+	printf("\nCommandes disponibles :\n");
+	printf("  /help                 affiche cette aide\n");
+	printf("  /q                    quitte le client\n");
+	printf("  /mp <ip> <message>    envoie un message prive en UDP\n\n");
+}
+
+static void print_banner(void) {
+	printf("Client chat connecte au serveur %s:%d\n", SERVER_IP, SERVER_PORT);
+	printf("Messages prives ecoutes sur le port UDP %d\n", PRIVATE_PORT);
+	printf("Tape /help pour afficher les commandes.\n\n");
+}
 
 static int connect_with_timeout(int sock, const struct sockaddr *addr, socklen_t addr_len, int timeout_sec) {
 	int flags = fcntl(sock, F_GETFL, 0);
@@ -80,6 +99,7 @@ static int connect_with_timeout(int sock, const struct sockaddr *addr, socklen_t
 int main(int argc, char *argv[]) {
 	(void)argc;
 	(void)argv;
+	setvbuf(stdout, NULL, _IONBF, 0);
 
 	/*
 	 * Étape 1 - Installation
@@ -126,6 +146,8 @@ int main(int argc, char *argv[]) {
 		close(sock);
 		return EXIT_FAILURE;
 	}
+
+	print_banner();
 
 	/*
 	 * Étape 6 - Socket d'écoute UDP pour les messages privés
@@ -198,6 +220,7 @@ int main(int argc, char *argv[]) {
 			 * jusqu'à l'appui sur Entrée. Le message lu est ensuite envoyé au
 			 * serveur avec send().
 			 */
+			print_prompt();
 			int nb_scan = scanf(IN_FILT, buffer);
 
 			if(nb_scan == 1) {
@@ -212,7 +235,10 @@ int main(int argc, char *argv[]) {
 					 * se débloque alors et peut quitter sa boucle.
 					 */
 					quit = 1;
+					printf("[info] Deconnexion demandee.\n");
 					shutdown(sock, SHUT_RDWR);
+				} else if(strcmp(buffer, CMD_HELP) == 0) {
+					print_help();
 				} else {
 					/*
 					 * Étape 7 - Commande de message privé
@@ -263,6 +289,8 @@ int main(int argc, char *argv[]) {
 
 								if(nb_send == -1) {
 									perror("Erreur envoi message privé");
+								} else {
+									printf("[mp -> %s] %s\n", private_ip, private_msg);
 								}
 							}
 
@@ -274,11 +302,14 @@ int main(int argc, char *argv[]) {
 							perror("Erreur envoi message");
 							quit = 1;
 							shutdown(sock, SHUT_RDWR);
+						} else {
+							printf("[general -> serveur] %s\n", buffer);
 						}
 					}
 				}
 			} else if(nb_scan == EOF) {
 				quit = 1;
+				printf("\n[info] Fin de l'entree standard.\n");
 				shutdown(sock, SHUT_RDWR);
 			} else {
 				/* Ligne vide : scanf() ne lit rien, on consomme le '\n'. */
@@ -317,7 +348,8 @@ int main(int argc, char *argv[]) {
 					snprintf(sender_ip, sizeof(sender_ip), "inconnue");
 				}
 
-				printf("[MP %s:%d] %s\n", sender_ip, ntohs(sender_addr.sin_port), buffer);
+				printf("\n[mp <- %s:%d] %s\n", sender_ip, ntohs(sender_addr.sin_port), buffer);
+				print_prompt();
 			}
 		} else {
 			/*
@@ -330,11 +362,12 @@ int main(int argc, char *argv[]) {
 			int nb_read = recv(sock, buffer, MSG_LEN - 1, 0);
 
 			if(nb_read <= 0) {
-				printf("Déconnecté du serveur\n");
+				printf("\n[info] Deconnecte du serveur\n");
 				quit = 1;
 			} else {
 				buffer[nb_read] = '\0';
-				printf("%s\n", buffer);
+				printf("\n[general] %s\n", buffer);
+				print_prompt();
 			}
 		}
 	}
