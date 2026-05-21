@@ -228,8 +228,40 @@ int main(int argc, char *argv[]) {
 				getchar();
 			}
 		} else if(pid[1] == 0) {
-			/* La réception UDP des messages privés sera ajoutée à l'étape 10. */
-			sleep(1);
+			/*
+			 * Étape 10 - Réception des messages privés
+			 *
+			 * Le deuxième enfant scrute la socket UDP attachée au port privé.
+			 * recvfrom() récupère à la fois le contenu du message et l'adresse
+			 * de l'expéditeur, ce qui permet d'afficher clairement l'origine
+			 * du message privé.
+			 */
+			struct sockaddr_in sender_addr;
+			socklen_t sender_len = sizeof(sender_addr);
+
+			int nb_read = recvfrom(
+				private_sock,
+				buffer,
+				MSG_LEN - 1,
+				0,
+				(struct sockaddr *)&sender_addr,
+				&sender_len
+			);
+
+			if(nb_read == -1) {
+				perror("Erreur réception message privé");
+				quit = 1;
+			} else {
+				char sender_ip[INET_ADDRSTRLEN];
+				buffer[nb_read] = '\0';
+
+				if(inet_ntop(AF_INET, &sender_addr.sin_addr, sender_ip, sizeof(sender_ip)) == NULL) {
+					perror("Erreur conversion IP expéditeur");
+					snprintf(sender_ip, sizeof(sender_ip), "inconnue");
+				}
+
+				printf("[MP %s:%d] %s\n", sender_ip, ntohs(sender_addr.sin_port), buffer);
+			}
 		} else {
 			/*
 			 * Étape 3 - Réception du chat général
