@@ -142,8 +142,8 @@ int main(int argc, char *argv[]) {
 					 * parse_mp() détecte la forme :
 					 *     /mp [adresse_ip] [message]
 					 *
-					 * Pour l'instant, on affiche seulement ce qui a été
-					 * extrait. L'envoi UDP sera ajouté à l'étape 8.
+					 * Si la commande est reconnue, l'étape 8 enverra le
+					 * contenu extrait avec UDP.
 					 */
 					memset(private_ip, 0, sizeof(private_ip));
 					memset(private_msg, 0, sizeof(private_msg));
@@ -154,7 +154,42 @@ int main(int argc, char *argv[]) {
 						quit = 1;
 						shutdown(sock, SHUT_RDWR);
 					} else if(mp_status == 1) {
-						printf("Message privé détecté vers %s : %s\n", private_ip, private_msg);
+						/*
+						 * Étape 8 - Envoi des messages privés
+						 *
+						 * La commande /mp ne passe pas par le serveur TCP. On
+						 * crée une socket UDP temporaire, on construit l'adresse
+						 * du destinataire, puis on envoie directement le message
+						 * sur son port privé.
+						 */
+						int send_private_sock = socket(AF_INET, SOCK_DGRAM, 0);
+						if(send_private_sock == -1) {
+							perror("Erreur création socket UDP d'envoi");
+						} else {
+							struct sockaddr_in dest_addr;
+							memset(&dest_addr, 0, sizeof(dest_addr));
+							dest_addr.sin_family = AF_INET;
+							dest_addr.sin_port = htons(PRIVATE_PORT);
+
+							if(inet_pton(AF_INET, private_ip, &dest_addr.sin_addr) != 1) {
+								fprintf(stderr, "Adresse IP privée invalide : %s\n", private_ip);
+							} else {
+								int nb_send = sendto(
+									send_private_sock,
+									private_msg,
+									strlen(private_msg),
+									0,
+									(struct sockaddr *)&dest_addr,
+									sizeof(dest_addr)
+								);
+
+								if(nb_send == -1) {
+									perror("Erreur envoi message privé");
+								}
+							}
+
+							close(send_private_sock);
+						}
 					} else {
 						int nb_send = send(sock, buffer, strlen(buffer), 0);
 						if(nb_send == -1) {
