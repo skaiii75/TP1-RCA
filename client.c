@@ -1,10 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <signal.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 
 #include "parse_command.h"
@@ -19,6 +22,60 @@
 #define SERVER_IP "169.254.61.46"
 #define SERVER_PORT 4242
 #define PRIVATE_PORT 5555
+#define CONNECT_TIMEOUT_SEC 5
+
+static int connect_with_timeout(int sock, const struct sockaddr *addr, socklen_t addr_len, int timeout_sec) {
+	int flags = fcntl(sock, F_GETFL, 0);
+	if(flags == -1) {
+		return -1;
+	}
+
+	if(fcntl(sock, F_SETFL, flags | O_NONBLOCK) == -1) {
+		return -1;
+	}
+
+	int status = connect(sock, addr, addr_len);
+	if(status == 0) {
+		return fcntl(sock, F_SETFL, flags);
+	}
+
+	if(errno != EINPROGRESS) {
+		fcntl(sock, F_SETFL, flags);
+		return -1;
+	}
+
+	fd_set write_fds;
+	FD_ZERO(&write_fds);
+	FD_SET(sock, &write_fds);
+
+	struct timeval timeout;
+	timeout.tv_sec = timeout_sec;
+	timeout.tv_usec = 0;
+
+	status = select(sock + 1, NULL, &write_fds, NULL, &timeout);
+	if(status <= 0) {
+		if(status == 0) {
+			errno = ETIMEDOUT;
+		}
+		fcntl(sock, F_SETFL, flags);
+		return -1;
+	}
+
+	int sock_error = 0;
+	socklen_t sock_error_len = sizeof(sock_error);
+	if(getsockopt(sock, SOL_SOCKET, SO_ERROR, &sock_error, &sock_error_len) == -1) {
+		fcntl(sock, F_SETFL, flags);
+		return -1;
+	}
+
+	if(sock_error != 0) {
+		errno = sock_error;
+		fcntl(sock, F_SETFL, flags);
+		return -1;
+	}
+
+	return fcntl(sock, F_SETFL, flags);
+}
 
 int main(int argc, char *argv[]) {
 	(void)argc;
@@ -64,7 +121,7 @@ int main(int argc, char *argv[]) {
 		return EXIT_FAILURE;
 	}
 
-	if(connect(sock, (struct sockaddr *)&server, sizeof(server)) == -1) {
+	if(connect_with_timeout(sock, (struct sockaddr *)&server, sizeof(server), CONNECT_TIMEOUT_SEC) == -1) {
 		perror("Erreur connexion serveur");
 		close(sock);
 		return EXIT_FAILURE;
