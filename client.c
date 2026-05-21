@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -64,26 +65,45 @@ int main(int argc, char *argv[]) {
 		return EXIT_FAILURE;
 	}
 
-	while(!quit) {
-		/*
-		 * IN_FILT lit le contenu saisi dans le terminal jusqu'au premier
-		 * retour à la ligne. MSG_SCAN_LEN évite de dépasser la taille du
-		 * buffer et garde une place pour le caractère final '\0'.
-		 */
-		int nb_scan = scanf(IN_FILT, buffer);
+	/*
+	 * À partir de l'étape 3, le programme est séparé en deux processus :
+	 * - le parent réceptionne les messages du serveur ;
+	 * - l'enfant sera utilisé plus tard pour lire le terminal.
+	 */
+	int pid = fork();
+	if(pid == -1) {
+		perror("Erreur fork");
+		close(sock);
+		return EXIT_FAILURE;
+	}
 
-		if(nb_scan == 1) {
-			if(strcmp(buffer, CMD_QUIT) == 0) {
+	while(!quit) {
+		if(pid == 0) {
+			/* L'envoi des messages sera ajouté à l'étape 4. */
+			sleep(1);
+		} else {
+			/*
+			 * Étape 3 - Réception du chat général
+			 *
+			 * Le thread parent écoute la socket TCP connectée au serveur.
+			 * recv() est bloquant : le parent attend ici qu'un message soit
+			 * diffusé par le serveur, puis l'affiche dans le terminal.
+			 */
+			int nb_read = recv(sock, buffer, MSG_LEN - 1, 0);
+
+			if(nb_read <= 0) {
+				printf("Déconnecté du serveur\n");
 				quit = 1;
 			} else {
-				printf("Message saisi : %s\n", buffer);
+				buffer[nb_read] = '\0';
+				printf("%s\n", buffer);
 			}
-		} else if(nb_scan == EOF) {
-			quit = 1;
-		} else {
-			/* Cas d'une ligne vide : on consomme le '\n' resté en entrée. */
-			getchar();
 		}
+	}
+
+	if(pid != 0) {
+		/* Le parent termine le processus enfant avant de quitter. */
+		kill(pid, SIGTERM);
 	}
 
 	close(sock);
