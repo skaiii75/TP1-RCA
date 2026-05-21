@@ -9,7 +9,7 @@ int parse_mp(char* source, char* ip_addr, char* msg){
 	regex_t re;
 	regmatch_t groups[3];
 
-	int err = regcomp(&re, "/mp ([0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}) (.*)", REG_EXTENDED);
+	int err = regcomp(&re, "/mp ([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}) (.*)", REG_EXTENDED);
 	if(err != 0) {
 		perror("Erreur compilation regex");
 		return -1;
@@ -17,10 +17,10 @@ int parse_mp(char* source, char* ip_addr, char* msg){
 
 	int match = regexec(&re, source, 3, groups, 0);
 	if(match == REG_NOMATCH) {
+		regfree(&re);
 		return 0;
 	}
 
-	size_t maxGroups = 3;
 	size_t g = 0;
 	short group_not_found = 0;
 	while(g < 3 && !group_not_found){
@@ -32,9 +32,11 @@ int parse_mp(char* source, char* ip_addr, char* msg){
 			switch(g) {
 				case 1:
 					strncpy(ip_addr, source+start, end-start);
+					ip_addr[end-start] = '\0';
 					break;
 				case 2:
 					strncpy(msg, source+start, end-start);
+					msg[end-start] = '\0';
 					break;
 				default:
 					break;

@@ -7,6 +7,8 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
+#include "parse_command.h"
+
 #define STR_HELPER(x) #x
 #define STR(x) STR_HELPER(x)
 
@@ -34,6 +36,8 @@ int main(int argc, char *argv[]) {
 	 * Pour quitter le programme, saisir la commande /q.
 	 */
 	char buffer[MSG_LEN];
+	char private_ip[MSG_LEN];
+	char private_msg[MSG_LEN];
 	int quit = 0;
 
 	/*
@@ -132,11 +136,32 @@ int main(int argc, char *argv[]) {
 					quit = 1;
 					shutdown(sock, SHUT_RDWR);
 				} else {
-					int nb_send = send(sock, buffer, strlen(buffer), 0);
-					if(nb_send == -1) {
-						perror("Erreur envoi message");
+					/*
+					 * Étape 7 - Commande de message privé
+					 *
+					 * parse_mp() détecte la forme :
+					 *     /mp [adresse_ip] [message]
+					 *
+					 * Pour l'instant, on affiche seulement ce qui a été
+					 * extrait. L'envoi UDP sera ajouté à l'étape 8.
+					 */
+					memset(private_ip, 0, sizeof(private_ip));
+					memset(private_msg, 0, sizeof(private_msg));
+					int mp_status = parse_mp(buffer, private_ip, private_msg);
+
+					if(mp_status == -1) {
+						fprintf(stderr, "Erreur analyse commande /mp\n");
 						quit = 1;
 						shutdown(sock, SHUT_RDWR);
+					} else if(mp_status == 1) {
+						printf("Message privé détecté vers %s : %s\n", private_ip, private_msg);
+					} else {
+						int nb_send = send(sock, buffer, strlen(buffer), 0);
+						if(nb_send == -1) {
+							perror("Erreur envoi message");
+							quit = 1;
+							shutdown(sock, SHUT_RDWR);
+						}
 					}
 				}
 			} else if(nb_scan == EOF) {
