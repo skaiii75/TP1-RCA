@@ -99,19 +99,40 @@ int main(int argc, char *argv[]) {
 	}
 
 	/*
-	 * À partir de l'étape 3, le programme est séparé en deux processus :
-	 * - le parent réceptionne les messages du serveur ;
-	 * - l'enfant sera utilisé plus tard pour lire le terminal.
+	 * Étape 9 - Création d'un thread supplémentaire
+	 *
+	 * pid[0] correspond au premier enfant, chargé de lire le terminal et
+	 * d'envoyer les messages. Le deuxième fork est lancé uniquement par le
+	 * parent, afin de créer pid[1], qui servira à recevoir les messages
+	 * privés UDP à l'étape 10.
+	 *
+	 * Valeurs obtenues :
+	 * - parent : pid[0] > 0 et pid[1] > 0 ;
+	 * - premier enfant : pid[0] == 0 et pid[1] == 0 ;
+	 * - deuxième enfant : pid[0] > 0 et pid[1] == 0.
 	 */
-	int pid = fork();
-	if(pid == -1) {
-		perror("Erreur fork");
+	int pid[2] = {0, 0};
+	pid[0] = fork();
+	if(pid[0] == -1) {
+		perror("Erreur premier fork");
 		close(sock);
+		close(private_sock);
 		return EXIT_FAILURE;
 	}
 
+	if(pid[0] != 0) {
+		pid[1] = fork();
+		if(pid[1] == -1) {
+			perror("Erreur deuxième fork");
+			kill(pid[0], SIGTERM);
+			close(sock);
+			close(private_sock);
+			return EXIT_FAILURE;
+		}
+	}
+
 	while(!quit) {
-		if(pid == 0) {
+		if(pid[0] == 0) {
 			/*
 			 * Étape 4 - Envoi de messages sur le chat général
 			 *
@@ -206,6 +227,9 @@ int main(int argc, char *argv[]) {
 				/* Ligne vide : scanf() ne lit rien, on consomme le '\n'. */
 				getchar();
 			}
+		} else if(pid[1] == 0) {
+			/* La réception UDP des messages privés sera ajoutée à l'étape 10. */
+			sleep(1);
 		} else {
 			/*
 			 * Étape 3 - Réception du chat général
@@ -226,9 +250,10 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	if(pid != 0) {
-		/* Le parent termine le processus enfant avant de quitter. */
-		kill(pid, SIGTERM);
+	if(pid[0] != 0 && pid[1] != 0) {
+		/* Le parent termine les deux processus enfants avant de quitter. */
+		kill(pid[0], SIGTERM);
+		kill(pid[1], SIGTERM);
 	}
 
 	close(sock);
